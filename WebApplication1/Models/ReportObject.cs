@@ -1,15 +1,14 @@
-﻿namespace WebApplication1.Models
-{
-    
+﻿// --- FILE: Models/ReportObject.cs ---
+using System;
+
 public class ReportObject
-    {
-        public int PatientID { get; set; }
-        public int ReportID { get; set; } // PK when saved to DB
-        public DateTime StartTime { get; set; }
-        public DateTime EndTime { get; set; }
-        public double MaxPressure { get; set; }
-        public int TotalAlerts { get; set; }
-        public string SummaryText { get; set; }
-        public string FilePath { get; set; }
-    }
+{
+    public int PatientID { get; set; } = 0;
+    public int ReportID { get; set; } = 0;
+    public DateTime StartTime { get; set; } = DateTime.MinValue;
+    public DateTime EndTime { get; set; } = DateTime.MinValue;
+    public double MaxPressure { get; set; } = 0.0;
+    public int TotalAlerts { get; set; } = 0;
+    public string SummaryText { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
 }
