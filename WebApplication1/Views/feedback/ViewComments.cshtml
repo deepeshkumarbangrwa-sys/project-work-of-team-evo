@@ -1,0 +1,32 @@
+﻿@{
+    // The ViewData Title is set here
+    ViewData["Title"] = $"Feedback for Frame ID: @ViewBag.FrameID";
+}
+
+<h2>Feedback and Clinician Review</h2>
+<p>Frame ID: @ViewBag.FrameID</p>
+<p>Frame Timestamp: [Insert Frame Timestamp here]</p>
+
+<div class="comments-section">
+    <div class="comment-item patient">
+        <strong>Patient (123):</strong> I felt a sharp pressure here today. Frame ID: @ViewBag.FrameID
+        <span class="timestamp"> [Date]</span>
+    </div>
+
+    <hr />
+
+    <form asp-controller="Feedback" asp-action="SubmitReply" method="post" class="reply-form">
+        <input type="hidden" name="parentCommentId" value="[MOCK PARENT ID]" />
+        <input type="hidden" name="frameId" value="@ViewBag.FrameID" />
+        <textarea name="replyText" rows="2" placeholder="Clinician Reply..."></textarea>
+        <button type="submit" class="btn btn-sm btn-primary">Reply</button>
+    </form>
+
+    <h4 class="mt-4">Submit New Patient Feedback</h4>
+
+    <form asp-controller="Feedback" asp-action="SubmitComment" method="post">
+        <input type="hidden" name="frameId" value="@ViewBag.FrameID" />
+        <textarea name="commentText" rows="3" required placeholder="Describe the pressure region or experience..."></textarea>
+        <button type="submit" class="btn btn-primary mt-2">Submit Feedback</button>
+    </form>
+</div>
