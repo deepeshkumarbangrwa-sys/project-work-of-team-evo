@@ -1,9 +1,9 @@
 ﻿// --- FILE: Models/FeedbackManager.cs (FINAL VERSION) ---
 using System.Data;
 
-public static class FeedbackManager
+public static class FeedbackManager 
 {
-    // P-4: Patient submits a new comment
+    // P-4: Patient submits a new comment 34567
     public static bool SubmitPatientComment(int frameId, int patientId, string content)
     {
         // NOTE: In a real app, this would execute the parameterized query.
