@@ -1,7 +1,11 @@
 ﻿// --- FILE: Controllers/ReportController.cs ---
+
+
+
 using Microsoft.AspNetCore.Mvc;
 using System;
 using System.IO;
+using WebApplication1.Models;
 // Assuming you have a placeholder for the DAL/Database access methods
 // using WebApplication1.DataAccess; 
 
