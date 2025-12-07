@@ -1,0 +1,26 @@
+﻿@model WebApplication1.Models.ReportObject
+
+<h2>Patient Clinical Report</h2>
+<hr />
+<div class="card">
+    <div class="card-header bg-primary text-white">
+        Report ID: @Model.ReportID
+    </div>
+    <div class="card-body">
+        <h5 class="card-title">Summary for Patient #@Model.PatientID</h5>
+        <p class="card-text">@Model.SummaryText</p>
+
+        <ul>
+            <li><strong>Max Pressure:</strong> @Model.MaxPressure mmHg</li>
+            <li><strong>High Risk Alerts:</strong> @Model.TotalAlerts</li>
+        </ul>
+
+        @if (!string.IsNullOrEmpty(Model.FilePath))
+        {
+            <div class="alert alert-success">
+                <strong>PDF Generated:</strong> @Model.FilePath
+            </div>
+            <button class="btn btn-success">Download PDF</button>
+        }
+    </div>
+</div>

@@ -1,8 +1,48 @@
 ﻿@{
-    ViewData["Title"] = "Home Page";
+    ViewData["Title"] = "Graphene Trace Dashboard";
 }
 
 <div class="text-center">
-    <h1 class="display-4">Welcome</h1>
-    <p>Learn about <a href="https://learn.microsoft.com/aspnet/core">building Web apps with ASP.NET Core</a>.</p>
+    <h1 class="display-4">Graphene Trace (Sensore)</h1>
+    <p>Welcome, Deepesh. Please select a module to test:</p>
+</div>
+
+<hr />
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-header bg-primary text-white">
+                User Story C-5 / A-3
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">Patient Reports</h5>
+                <p class="card-text">Generate weekly risk analysis and download PDF.</p>
+                <a asp-controller="Report" asp-action="ViewReport"
+                   asp-route-patientId="123"
+                   asp-route-startDate="@DateTime.Now.AddDays(-7).ToString("yyyy-MM-dd")"
+                   asp-route-endDate="@DateTime.Now.ToString("yyyy-MM-dd")"
+                   class="btn btn-primary">
+                    Launch Report System
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card text-center">
+            <div class="card-header bg-success text-white">
+                User Story P-4 / C-4
+            </div>
+            <div class="card-body">
+                <h5 class="card-title">Feedback & Communication</h5>
+                <p class="card-text">View threaded comments and submit replies.</p>
+                <a asp-controller="Feedback" asp-action="ViewComments"
+                   asp-route-frameId="501"
+                   class="btn btn-success">
+                    Launch Feedback Thread
+                </a>
+            </div>
+        </div>
+    </div>
 </div>
