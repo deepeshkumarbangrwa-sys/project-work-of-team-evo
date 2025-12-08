@@ -17,10 +17,12 @@
 
         @if (!string.IsNullOrEmpty(Model.FilePath))
         {
-            <div class="alert alert-success">
-                <strong>PDF Generated:</strong> @Model.FilePath
+            <div class="alert alert-success mt-3">
+                <strong>Report Ready!</strong> Saved to: @Model.FilePath
             </div>
-            <button class="btn btn-success">Download PDF</button>
+            <a asp-controller="Report" asp-action="DownloadPdf" asp-route-filePath="@Model.FilePath" class="btn btn-success">
+                Download Report File
+            </a>
         }
     </div>
 </div>

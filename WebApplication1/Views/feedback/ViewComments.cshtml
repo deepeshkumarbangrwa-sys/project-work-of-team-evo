@@ -1,38 +1,170 @@
-﻿@model List<string>
+﻿@using WebApplication1.Controllers
+@model List<CommentModel>
 
-<h2>Feedback Thread (Frame ID: @ViewBag.FrameID)</h2>
+@{
+    string currentRole = ViewBag.CurrentRole as string;
+    int currentFrame = ViewBag.FrameID;
+}
+
+<style>
+    /* ... (Your existing CSS styles remain here) ... */
+    @@keyframes slideIn {
+        from {
+            opacity: 0;
+            transform: translateY(10px);
+        }
+
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    .chat-container {
+        background-color: #f8f9fa;
+        border-radius: 10px;
+        padding: 20px;
+        height: 500px;
+        overflow-y: auto;
+        border: 1px solid #ddd;
+        margin-bottom: 20px;
+    }
+
+    .message-card {
+        animation: slideIn 0.4s ease-out;
+        margin-bottom: 15px;
+        max-width: 80%;
+        padding: 15px;
+        border-radius: 15px;
+        position: relative;
+    }
+
+    .msg-patient {
+        background-color: #e3f2fd;
+        border-left: 5px solid #007bff;
+        margin-right: auto;
+    }
+
+    .msg-clinician {
+        background-color: #d4edda;
+        border-left: 5px solid #28a745;
+        margin-left: auto;
+    }
+
+    .meta-info {
+        font-size: 0.8rem;
+        color: #6c757d;
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+    }
+
+    .role-badge {
+        font-weight: bold;
+        text-transform: uppercase;
+        font-size: 0.75rem;
+        padding: 2px 6px;
+        border-radius: 4px;
+        color: white;
+    }
+
+    .badge-pat {
+        background-color: #007bff;
+    }
+
+    .badge-clin {
+        background-color: #28a745;
+    }
+
+    .role-switcher {
+        background: #343a40;
+        color: white;
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+    }
+</style>
+
+<div class="role-switcher">
+    <div>
+        <a asp-controller="Home" asp-action="Index" class="btn btn-sm btn-light me-3">
+            <i class="fa-solid fa-arrow-left"></i> Back to Dashboard
+        </a>
+        <span>
+            <strong>Current View:</strong> @currentRole
+        </span>
+    </div>
+
+    <div>
+        <span class="small me-2">Switch Role:</span>
+        <a asp-action="SwitchRole" asp-route-role="Patient" class="btn btn-sm btn-outline-light">Patient</a>
+        <a asp-action="SwitchRole" asp-route-role="Clinician" class="btn btn-sm btn-outline-light">Clinician</a>
+    </div>
+</div>
+
+<h2><i class="fa-solid fa-comments"></i> Feedback Thread <span class="text-muted h5">(Frame #@currentFrame)</span></h2>
 <hr />
 
-<div class="mb-4">
-    <h4>Conversation History</h4>
-    <ul class="list-group">
-        @foreach (var comment in Model)
-        {
-            <li class="list-group-item">@comment</li>
-        }
-    </ul>
+<div class="chat-container">
+    @if (Model.Count == 0)
+    {
+        <p class="text-center text-muted mt-5">No feedback yet. Start the conversation!</p>
+    }
+
+    @foreach (var comment in Model)
+    {
+        string styleClass = comment.Role == "Patient" ? "msg-patient" : "msg-clinician";
+        string badgeClass = comment.Role == "Patient" ? "badge-pat" : "badge-clin";
+
+        <div class="message-card @styleClass">
+            <div class="meta-info">
+                <span>
+                    <span class="role-badge @badgeClass">@comment.Role</span>
+                    <strong>@comment.UserName</strong>
+                </span>
+                <span>@comment.Timestamp.ToString("g")</span>
+            </div>
+
+            <p class="mb-1">@comment.Content</p>
+
+            @if (currentRole == "Clinician" && comment.Role == "Patient")
+            {
+                <hr style="margin: 8px 0; opacity: 0.2;">
+                <form asp-action="SubmitReply" method="post" class="d-flex gap-2">
+                    <input type="hidden" name="frameId" value="@currentFrame" />
+                    <input type="hidden" name="parentCommentId" value="@comment.Id" />
+                    <input type="text" name="replyText" class="form-control form-control-sm" placeholder="Reply to this comment..." required />
+                    <button type="submit" class="btn btn-sm btn-success">Reply</button>
+                </form>
+            }
+        </div>
+    }
 </div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card p-3">
-            <h5>Patient Feedback (P-4)</h5>
+@if (currentRole == "Patient")
+{
+    <div class="card shadow-sm">
+        <div class="card-header bg-primary text-white">
+            <i class="fa-solid fa-pen"></i> Submit New Feedback
+        </div>
+        <div class="card-body">
             <form asp-action="SubmitComment" method="post">
-                <input type="hidden" name="frameId" value="@ViewBag.FrameID" />
-                <textarea name="commentText" class="form-control mb-2" placeholder="Describe pain..."></textarea>
-                <button type="submit" class="btn btn-primary">Submit</button>
+                <input type="hidden" name="frameId" value="@currentFrame" />
+                <div class="mb-3">
+                    <label class="form-label">Describe your experience or pain level:</label>
+                    <textarea name="commentText" class="form-control" rows="3" placeholder="I felt discomfort when..." required></textarea>
+                </div>
+                <button type="submit" class="btn btn-primary w-100">Send Feedback</button>
             </form>
         </div>
     </div>
-    <div class="col-md-6">
-        <div class="card p-3">
-            <h5>Clinician Reply (C-4)</h5>
-            <form asp-action="SubmitReply" method="post">
-                <input type="hidden" name="frameId" value="@ViewBag.FrameID" />
-                <input type="hidden" name="parentCommentId" value="1" />
-                <textarea name="replyText" class="form-control mb-2" placeholder="Clinical advice..."></textarea>
-                <button type="submit" class="btn btn-warning">Reply</button>
-            </form>
-        </div>
+}
+else
+{
+    <div class="alert alert-secondary text-center">
+        <i class="fa-solid fa-user-doctor"></i> You are viewing as a <strong>Clinician</strong>. Use the reply boxes above.
     </div>
-</div>
+}
