@@ -2,148 +2,139 @@
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
+using Microsoft.Data.SqlClient;
+using WebApplication1.Models;
 using System.Linq;
 
 namespace WebApplication1.Controllers
 {
     public class CommentModel
     {
-        public int Id { get; set; }
-        public int PatientId { get; set; }
-        public int AuthorId { get; set; }
-        public string AuthorName { get; set; }
-        public string Role { get; set; }
-        public string Content { get; set; }
+        public string AuthorName { get; set; } = string.Empty;
+        public string Role { get; set; } = string.Empty;
+        public string Content { get; set; } = string.Empty;
         public DateTime Timestamp { get; set; }
-
-        // NEW: Tracks if the message has been seen
-        public bool IsRead { get; set; } = false;
+        public bool IsRead { get; set; }
     }
 
     public class PatientViewModel
     {
         public int Id { get; set; }
-        public string Name { get; set; }
+        public string Name { get; set; } = string.Empty;
         public int NotificationCount { get; set; }
-        public DateTime LastActivity { get; set; }
     }
 
     public class FeedbackController : Controller
     {
-        // STATIC DB
-        private static List<CommentModel> _comments = new List<CommentModel>
+        public IActionResult PatientHome()
         {
-            new CommentModel { Id=1, PatientId=123, AuthorId=123, AuthorName="John Doe", Role="Patient", Content="Pain in lower back.", Timestamp=DateTime.Now.AddHours(-5), IsRead=true },
-            new CommentModel { Id=2, PatientId=123, AuthorId=456, AuthorName="Dr. Smith", Role="Clinician", Content="Adjust cushion tilt.", Timestamp=DateTime.Now.AddHours(-4), IsRead=true },
-            
-            // These messages are FALSE (Unread) by default. They will turn TRUE when you view them.
-            new CommentModel { Id=3, PatientId=789, AuthorId=789, AuthorName="Alice Wonderland", Role="Patient", Content="I am feeling much better today!", Timestamp=DateTime.Now.AddMinutes(-30), IsRead=false },
-            new CommentModel { Id=4, PatientId=789, AuthorId=789, AuthorName="Alice Wonderland", Role="Patient", Content="Can I increase the duration?", Timestamp=DateTime.Now.AddMinutes(-10), IsRead=false }
-        };
-
-        // --- CLINICIAN DASHBOARD ---
-        public IActionResult ClinicianDashboard(string search)
-        {
-            string role = HttpContext.Session.GetString("UserRole");
-            if (role != "Clinician") return RedirectToAction("ViewComments");
-
-            var patientIds = _comments.Select(c => c.PatientId).Distinct().ToList();
-            var dashboardList = new List<PatientViewModel>();
-
-            foreach (var pid in patientIds)
-            {
-                var pComments = _comments.Where(c => c.PatientId == pid).ToList();
-
-                // LOGIC: Count only messages that are from a Patient AND are NOT read yet
-                int notifs = pComments.Count(c => c.Role == "Patient" && c.IsRead == false);
-
-                dashboardList.Add(new PatientViewModel
-                {
-                    Id = pid,
-                    Name = pComments.First(c => c.Role == "Patient").AuthorName,
-                    NotificationCount = notifs,
-                    LastActivity = pComments.Max(c => c.Timestamp)
-                });
-            }
-
-            if (!string.IsNullOrEmpty(search))
-            {
-                dashboardList = dashboardList
-                    .Where(p => p.Name.ToLower().Contains(search.ToLower()) || p.Id.ToString().Contains(search))
-                    .ToList();
-            }
-
-            return View(dashboardList);
+            if (HttpContext.Session.GetString("UserRole") != "Patient") return RedirectToAction("Login", "Account");
+            ViewBag.UserName = HttpContext.Session.GetString("UserName");
+            return View();
         }
 
-        // --- CHAT VIEW ---
+        public IActionResult ClinicianDashboard()
+        {
+            if (HttpContext.Session.GetString("UserRole") != "Clinician") return RedirectToAction("Login", "Account");
+
+            var patients = new List<PatientViewModel>();
+            using (SqlConnection conn = DbHelper.GetConnection())
+            {
+                conn.Open();
+                string query = @"
+                    SELECT u.UserID, u.FullName, 
+                    (SELECT COUNT(*) FROM Comments c WHERE c.PatientID = u.UserID AND c.Role = 'Patient' AND c.IsRead = 0) as Unread
+                    FROM Users u WHERE u.Role = 'Patient'";
+
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                using (SqlDataReader reader = cmd.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        patients.Add(new PatientViewModel
+                        {
+                            Id = (int)reader["UserID"],
+                            Name = reader["FullName"].ToString(),
+                            NotificationCount = (int)reader["Unread"]
+                        });
+                    }
+                }
+            }
+            return View(patients);
+        }
+
         public IActionResult ViewComments(int? patientId)
         {
-            string role = HttpContext.Session.GetString("UserRole") ?? "Patient";
-            int myId = HttpContext.Session.GetInt32("UserID") ?? 123;
-            int targetPatientId;
+            if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
 
-            if (role == "Patient") targetPatientId = myId;
-            else
+            int myId = HttpContext.Session.GetInt32("UserID") ?? 0;
+            string role = HttpContext.Session.GetString("UserRole");
+
+            int targetId = (role == "Patient") ? myId : patientId ?? 0;
+            if (targetId == 0 && role == "Clinician") return RedirectToAction("ClinicianDashboard");
+
+            if (role == "Clinician")
             {
-                if (patientId == null) return RedirectToAction("ClinicianDashboard");
-                targetPatientId = patientId.Value;
-
-                // --- MARK AS READ LOGIC ---
-                // If a Clinician opens this page, find all unread messages for this patient and mark them Read.
-                var unreadMsgs = _comments.Where(c => c.PatientId == targetPatientId && c.Role == "Patient" && !c.IsRead).ToList();
-                foreach (var msg in unreadMsgs)
+                using (SqlConnection conn = DbHelper.GetConnection())
                 {
-                    msg.IsRead = true;
+                    conn.Open();
+                    new SqlCommand($"UPDATE Comments SET IsRead = 1 WHERE PatientID = {targetId} AND Role = 'Patient'", conn).ExecuteNonQuery();
                 }
-                // --------------------------
             }
 
-            var threadMessages = _comments
-                .Where(c => c.PatientId == targetPatientId)
-                .OrderBy(c => c.Timestamp)
-                .ToList();
+            var comments = new List<CommentModel>();
+            using (SqlConnection conn = DbHelper.GetConnection())
+            {
+                conn.Open();
+                string query = "SELECT AuthorName, Role, Content, Timestamp, IsRead FROM Comments WHERE PatientID = @pid ORDER BY Timestamp ASC";
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@pid", targetId);
+                    using (SqlDataReader reader = cmd.ExecuteReader())
+                    {
+                        while (reader.Read())
+                        {
+                            comments.Add(new CommentModel
+                            {
+                                AuthorName = reader["AuthorName"].ToString(),
+                                Role = reader["Role"].ToString(),
+                                Content = reader["Content"].ToString(),
+                                Timestamp = (DateTime)reader["Timestamp"],
+                                IsRead = (bool)reader["IsRead"]
+                            });
+                        }
+                    }
+                }
+            }
 
-            ViewBag.TargetPatientID = targetPatientId;
             ViewBag.CurrentRole = role;
-
-            return View(threadMessages);
-        }
-
-        // --- SUBMIT ACTIONS ---
-        [HttpPost]
-        public IActionResult SubmitComment(int patientId, string commentText)
-        {
-            int myId = HttpContext.Session.GetInt32("UserID") ?? 123;
-            _comments.Add(new CommentModel
-            {
-                Id = _comments.Count + 1,
-                PatientId = myId,
-                AuthorId = myId,
-                AuthorName = "Patient " + myId,
-                Role = "Patient",
-                Content = commentText,
-                Timestamp = DateTime.Now,
-                IsRead = false
-            });
-            return RedirectToAction("ViewComments");
+            ViewBag.TargetPatientID = targetId;
+            return View(comments);
         }
 
         [HttpPost]
-        public IActionResult SubmitReply(int patientId, string replyText)
+        public IActionResult SubmitMessage(int patientId, string content)
         {
-            int myId = HttpContext.Session.GetInt32("UserID") ?? 456;
-            _comments.Add(new CommentModel
+            if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
+
+            int myId = HttpContext.Session.GetInt32("UserID") ?? 0;
+            string role = HttpContext.Session.GetString("UserRole");
+            string name = HttpContext.Session.GetString("UserName");
+
+            using (SqlConnection conn = DbHelper.GetConnection())
             {
-                Id = _comments.Count + 1,
-                PatientId = patientId,
-                AuthorId = myId,
-                AuthorName = "Dr. Smith",
-                Role = "Clinician",
-                Content = replyText,
-                Timestamp = DateTime.Now,
-                IsRead = true
-            });
+                conn.Open();
+                string query = "INSERT INTO Comments (PatientID, AuthorID, AuthorName, Role, Content, IsRead) VALUES (@pid, @aid, @aname, @role, @content, 0)";
+                using (SqlCommand cmd = new SqlCommand(query, conn))
+                {
+                    cmd.Parameters.AddWithValue("@pid", patientId);
+                    cmd.Parameters.AddWithValue("@aid", myId);
+                    cmd.Parameters.AddWithValue("@aname", name);
+                    cmd.Parameters.AddWithValue("@role", role);
+                    cmd.Parameters.AddWithValue("@content", content);
+                    cmd.ExecuteNonQuery();
+                }
+            }
             return RedirectToAction("ViewComments", new { patientId = patientId });
         }
     }

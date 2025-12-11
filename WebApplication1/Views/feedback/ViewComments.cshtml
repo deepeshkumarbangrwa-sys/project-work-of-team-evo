@@ -1,78 +1,39 @@
 ﻿@model List<WebApplication1.Controllers.CommentModel>
-@{
-    string currentRole = ViewBag.CurrentRole;
-    int targetPatientId = ViewBag.TargetPatientID;
+@{ 
+    string role = ViewBag.CurrentRole; 
+    int pid = ViewBag.TargetPatientID; 
 }
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
 
-<div class="d-flex justify-content-between align-items-center mb-3 p-3 rounded shadow-sm bg-white border-bottom">
-
-    <div class="d-flex align-items-center gap-3">
-        @if (currentRole == "Clinician")
-        {
-            <a asp-action="ClinicianDashboard" class="btn btn-sm btn-outline-secondary">
-                <i class="fa-solid fa-arrow-left"></i> Back to Patient List
-            </a>
-            <h5 class="m-0">Patient #@targetPatientId</h5>
-        }
-        else
-        {
-            <a asp-controller="Home" asp-action="Index" class="btn btn-sm btn-outline-dark">
-                <i class="fa-solid fa-home"></i> Home
-            </a>
-            <h5 class="m-0">My Feedback History</h5>
-        }
-
-        <a asp-controller="Report" asp-action="ViewReport" asp-route-patientId="@targetPatientId" class="btn btn-sm btn-info text-white shadow-sm">
-            <i class="fa-solid fa-file-medical"></i> View Medical Report
+<div class="d-flex justify-content-between align-items-center mb-3 p-3 bg-white shadow-sm rounded">
+    <div>
+        @if(role == "Clinician") { <a asp-action="ClinicianDashboard" class="btn btn-outline-secondary btn-sm">Back to List</a> }
+        else { <a asp-action="PatientHome" class="btn btn-outline-secondary btn-sm">Home</a> }
+        
+        <a asp-controller="Report" asp-action="ViewReport" asp-route-patientId="@pid" class="btn btn-info btn-sm text-white ms-2">
+            <i class="fa-solid fa-file-medical"></i> View Report
         </a>
     </div>
-
-    <span class="badge bg-light text-dark border">Logged in as: @currentRole</span>
+    <span class="badge bg-primary">Logged in as: @role</span>
 </div>
 
-<div class="chat-container bg-light p-3 rounded border" style="height: 500px; overflow-y: auto;">
+<div class="chat-container bg-light p-3 border rounded mb-3" style="height: 400px; overflow-y: auto;">
+    @if (!Model.Any()) { <p class="text-center text-muted mt-5">Start the conversation!</p> }
     @foreach (var msg in Model)
     {
-        string align = (msg.Role == "Patient") ? "justify-content-start" : "justify-content-end";
-        string bubbleColor = (msg.Role == "Patient") ? "bg-white border" : "bg-success text-white";
-        string alignText = (msg.Role == "Patient") ? "text-start" : "text-end";
-        string statusIcon = (msg.Role == "Patient" && msg.IsRead) ? "<i class='fa-solid fa-check-double text-primary' title='Read by Clinician'></i>" : "";
-
-        <div class="d-flex @align mb-3">
-            <div class="p-3 rounded shadow-sm @bubbleColor" style="max-width: 75%;">
-                <div class="small opacity-75 mb-1 @alignText d-flex justify-content-between">
-                    <strong>@msg.AuthorName</strong>
-                    <span>@msg.Timestamp.ToShortTimeString()</span>
-                </div>
+        string align = msg.Role == "Patient" ? "start" : "end";
+        string color = msg.Role == "Patient" ? "bg-white border" : "bg-success text-white";
+        <div class="d-flex justify-content-@align mb-2">
+            <div class="p-2 rounded @color" style="max-width: 75%;">
+                <small class="d-block opacity-75">@msg.AuthorName - @msg.Timestamp.ToShortTimeString()</small>
                 <div>@msg.Content</div>
-                @if (msg.Role == "Patient")
-                {
-                    <div class="text-end small mt-1">@Html.Raw(statusIcon)</div>
-                }
             </div>
         </div>
     }
 </div>
 
-<div class="mt-3">
-    @if (currentRole == "Patient")
-    {
-        <form asp-action="SubmitComment" method="post">
-            <input type="hidden" name="patientId" value="@targetPatientId" />
-            <div class="input-group">
-                <textarea name="commentText" class="form-control" placeholder="Type your message..." rows="2"></textarea>
-                <button class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Send</button>
-            </div>
-        </form>
-    }
-    else
-    {
-        <form asp-action="SubmitReply" method="post">
-            <input type="hidden" name="patientId" value="@targetPatientId" />
-            <div class="input-group">
-                <textarea name="replyText" class="form-control" placeholder="Reply to patient..." rows="2"></textarea>
-                <button class="btn btn-success"><i class="fa-solid fa-reply"></i> Reply</button>
-            </div>
-        </form>
-    }
-</div>
+<form asp-action="SubmitMessage" method="post" class="d-flex gap-2">
+    <input type="hidden" name="patientId" value="@pid" />
+    <input name="content" class="form-control" placeholder="Type a message..." required />
+    <button class="btn btn-primary"><i class="fa-solid fa-paper-plane"></i> Send</button>
+</form>

@@ -1,0 +1,16 @@
+﻿<div class="text-center mt-5">
+    <h1>Welcome, @ViewBag.UserName</h1>
+    <p class="lead">Graphene Trace Patient Portal</p>
+    <hr />
+    <div class="card p-5 shadow mx-auto" style="max-width: 500px;">
+        <i class="fa-solid fa-notes-medical fa-4x text-primary mb-3"></i>
+        <h3>Your Health Dashboard</h3>
+        <p>Access your medical reports and chat with your assigned clinician.</p>
+        
+        <a asp-action="ViewComments" class="btn btn-primary btn-lg mt-3">
+            Go to Reports & Feedback
+        </a>
+    </div>
+    <br />
+    <a asp-controller="Account" asp-action="Logout" class="text-danger">Log Out</a>
+</div>

@@ -1,19 +1,23 @@
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using System;
+
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// Add services for MVC and Controllers
 builder.Services.AddControllersWithViews();
 
-// 1. ADD THIS: Enable Session support in memory
+// Configure Session Management
 builder.Services.AddSession(options =>
 {
-    options.IdleTimeout = TimeSpan.FromMinutes(30); // How long until they are logged out automatically
+    options.IdleTimeout = TimeSpan.FromMinutes(30);
     options.Cookie.HttpOnly = true;
     options.Cookie.IsEssential = true;
 });
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Home/Error");
@@ -22,16 +26,15 @@ if (!app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-
 app.UseRouting();
-
 app.UseAuthorization();
 
-// 2. ADD THIS: Tell the app to actually USE the session we set up
+// Activate Session (MUST come before routing)
 app.UseSession();
 
+// Final Route: Start at Account/Login
 app.MapControllerRoute(
     name: "default",
-    pattern: "{controller=Home}/{action=Index}/{id?}");
+    pattern: "{controller=Account}/{action=Login}/{id?}");
 
 app.Run();

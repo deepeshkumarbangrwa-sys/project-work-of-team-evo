@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc; // Removed the '#' symbol
 using Microsoft.AspNetCore.Http;
 using System;
 using System.IO;
@@ -8,34 +8,28 @@ namespace WebApplication1.Controllers
 {
     public class ReportController : Controller
     {
-        // C-5: View Report Page
         public IActionResult ViewReport(int? patientId, DateTime startDate, DateTime endDate)
         {
-            // TESTING MODE: Default to User 123 if not logged in
-            if (patientId == null || patientId == 0)
-            {
-                int? sessionID = HttpContext.Session.GetInt32("UserID");
-                patientId = sessionID ?? 123; // Use 123 if session is null
-            }
+            if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
 
-            // Generate Data
-            ReportObject report = ReportGenerator.GenerateReportData(patientId.Value, startDate, endDate);
+            int id = HttpContext.Session.GetInt32("UserID") ?? 0;
+            int targetId = (HttpContext.Session.GetString("UserRole") == "Patient") ? id : patientId ?? id;
 
-            // Generate PDF if alerts exist
+            ReportObject report = ReportGenerator.GenerateReportData(targetId, startDate, endDate);
+
             if (report.TotalAlerts > 0)
             {
                 report = ReportGenerator.ExportAndStore(report);
             }
-
             return View(report);
         }
 
-        // A-3: Download Action
         public IActionResult DownloadPdf(string filePath)
         {
+            // FIXED: Correct syntax is File.Exists(path), not File(path).Exists
             if (string.IsNullOrEmpty(filePath) || !System.IO.File.Exists(filePath))
             {
-                return Content("Error: File not found on server.");
+                return Content("Error: Report file could not be found.");
             }
 
             byte[] fileBytes = System.IO.File.ReadAllBytes(filePath);
