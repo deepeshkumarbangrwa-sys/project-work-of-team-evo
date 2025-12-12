@@ -2,12 +2,15 @@
 using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
-using Microsoft.Data.SqlClient;
 using WebApplication1.Models;
+using WebApplication1.Data; // <-- NEW: Required for AppDbContext
 using System.Linq;
+using System.Threading.Tasks; // <-- NEW: For async database operations
+using Microsoft.EntityFrameworkCore; // <-- NEW: For EF Core methods
 
 namespace WebApplication1.Controllers
 {
+    // These models map directly to the UserFeedback table for display
     public class CommentModel
     {
         public string AuthorName { get; set; } = string.Empty;
@@ -26,115 +29,119 @@ namespace WebApplication1.Controllers
 
     public class FeedbackController : Controller
     {
+        private readonly AppDbContext _context; // <-- NEW: Injected DbContext
+
+        // Constructor for Dependency Injection
+        public FeedbackController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        // GET: /Feedback/PatientHome
         public IActionResult PatientHome()
         {
             if (HttpContext.Session.GetString("UserRole") != "Patient") return RedirectToAction("Login", "Account");
-            ViewBag.UserName = HttpContext.Session.GetString("UserName");
+            // NOTE: Ensure "UserName" is set in AccountController during login.
+            ViewBag.UserName = HttpContext.Session.GetString("UserEmail"); 
             return View();
         }
 
-        public IActionResult ClinicianDashboard()
+        // GET: /Feedback/ClinicianDashboard
+        public async Task<IActionResult> ClinicianDashboard()
         {
             if (HttpContext.Session.GetString("UserRole") != "Clinician") return RedirectToAction("Login", "Account");
 
-            var patients = new List<PatientViewModel>();
-            using (SqlConnection conn = DbHelper.GetConnection())
-            {
-                conn.Open();
-                string query = @"
-                    SELECT u.UserID, u.FullName, 
-                    (SELECT COUNT(*) FROM Comments c WHERE c.PatientID = u.UserID AND c.Role = 'Patient' AND c.IsRead = 0) as Unread
-                    FROM Users u WHERE u.Role = 'Patient'";
-
-                using (SqlCommand cmd = new SqlCommand(query, conn))
-                using (SqlDataReader reader = cmd.ExecuteReader())
+            // --- REPLACED MANUAL SQL WITH EF CORE LINQ ---
+            var patients = await _context.Users
+                .Where(u => u.Role == "Patient")
+                .Select(u => new PatientViewModel
                 {
-                    while (reader.Read())
-                    {
-                        patients.Add(new PatientViewModel
-                        {
-                            Id = (int)reader["UserID"],
-                            Name = reader["FullName"].ToString(),
-                            NotificationCount = (int)reader["Unread"]
-                        });
-                    }
-                }
-            }
+                    Id = u.UserId,
+                    Name = u.FullName,
+                    // Calculated the unread count via the navigation property
+                    NotificationCount = u.FeedbackEntries
+                        .Count(f => f.User.Role == "Patient" && !f.IsReviewed) 
+                })
+                .ToListAsync();
+            // ---------------------------------------------
+            
             return View(patients);
         }
 
-        public IActionResult ViewComments(int? patientId)
+        // GET: /Feedback/ViewComments
+        public async Task<IActionResult> ViewComments(int? patientId)
         {
             if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
 
-            int myId = HttpContext.Session.GetInt32("UserID") ?? 0;
-            string role = HttpContext.Session.GetString("UserRole");
+            int myId = HttpContext.Session.GetInt32("UserId") ?? 0;
+            string role = HttpContext.Session.GetString("UserRole") ?? string.Empty;
 
             int targetId = (role == "Patient") ? myId : patientId ?? 0;
             if (targetId == 0 && role == "Clinician") return RedirectToAction("ClinicianDashboard");
 
             if (role == "Clinician")
             {
-                using (SqlConnection conn = DbHelper.GetConnection())
+                // --- REPLACED MANUAL SQL UPDATE WITH EF CORE ---
+                // Mark all patient-submitted (unreplied) comments as reviewed
+                var unreviewedComments = await _context.UserFeedback
+                    .Where(f => f.UserId == targetId && !f.IsReviewed)
+                    .ToListAsync();
+                
+                foreach (var comment in unreviewedComments)
                 {
-                    conn.Open();
-                    new SqlCommand($"UPDATE Comments SET IsRead = 1 WHERE PatientID = {targetId} AND Role = 'Patient'", conn).ExecuteNonQuery();
+                    comment.IsReviewed = true;
                 }
+                await _context.SaveChangesAsync();
+                // ------------------------------------------------
             }
 
-            var comments = new List<CommentModel>();
-            using (SqlConnection conn = DbHelper.GetConnection())
-            {
-                conn.Open();
-                string query = "SELECT AuthorName, Role, Content, Timestamp, IsRead FROM Comments WHERE PatientID = @pid ORDER BY Timestamp ASC";
-                using (SqlCommand cmd = new SqlCommand(query, conn))
+            // --- REPLACED MANUAL SQL QUERY WITH EF CORE LINQ ---
+            // Fetch all feedback related to the target user
+            var feedback = await _context.UserFeedback
+                .Where(f => f.UserId == targetId)
+                // Use the User navigation property for the AuthorName
+                .OrderBy(f => f.Timestamp)
+                .Select(f => new CommentModel
                 {
-                    cmd.Parameters.AddWithValue("@pid", targetId);
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        while (reader.Read())
-                        {
-                            comments.Add(new CommentModel
-                            {
-                                AuthorName = reader["AuthorName"].ToString(),
-                                Role = reader["Role"].ToString(),
-                                Content = reader["Content"].ToString(),
-                                Timestamp = (DateTime)reader["Timestamp"],
-                                IsRead = (bool)reader["IsRead"]
-                            });
-                        }
-                    }
-                }
-            }
+                    AuthorName = f.User.FullName, 
+                    Role = f.User.Role, 
+                    Content = f.CommentText,
+                    Timestamp = f.Timestamp,
+                    IsRead = f.IsReviewed // Map IsReviewed to IsRead for display logic
+                })
+                .ToListAsync();
+            // ---------------------------------------------------
 
             ViewBag.CurrentRole = role;
             ViewBag.TargetPatientID = targetId;
-            return View(comments);
+            ViewBag.PatientName = await _context.Users.Where(u => u.UserId == targetId).Select(u => u.FullName).FirstOrDefaultAsync();
+
+            return View(feedback);
         }
 
+        // POST: /Feedback/SubmitMessage
         [HttpPost]
-        public IActionResult SubmitMessage(int patientId, string content)
+        public async Task<IActionResult> SubmitMessage(int patientId, string content)
         {
             if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
+            if (string.IsNullOrWhiteSpace(content)) return RedirectToAction("ViewComments", new { patientId = patientId });
 
-            int myId = HttpContext.Session.GetInt32("UserID") ?? 0;
-            string role = HttpContext.Session.GetString("UserRole");
-            string name = HttpContext.Session.GetString("UserName");
+            int myId = HttpContext.Session.GetInt32("UserId") ?? 0;
+            string role = HttpContext.Session.GetString("UserRole") ?? "Unknown";
 
-            using (SqlConnection conn = DbHelper.GetConnection())
+            // --- REPLACED MANUAL SQL INSERT WITH EF CORE ---
+            var newFeedback = new UserFeedback
             {
-                conn.Open();
-                string query = "INSERT INTO Comments (PatientID, AuthorID, AuthorName, Role, Content, IsRead) VALUES (@pid, @aid, @aname, @role, @content, 0)";
-                using (SqlCommand cmd = new SqlCommand(query, conn))
-                {
-                    cmd.Parameters.AddWithValue("@pid", patientId);
-                    cmd.Parameters.AddWithValue("@aid", myId);
-                    cmd.Parameters.AddWithValue("@aname", name);
-                    cmd.Parameters.AddWithValue("@role", role);
-                    cmd.Parameters.AddWithValue("@content", content);
-                    cmd.ExecuteNonQuery();
-                }
-            }
+                UserId = patientId, 
+                Timestamp = DateTime.UtcNow,
+                CommentText = content,
+                IsReviewed = (role != "Patient") // Clinician replies are instantly reviewed
+            };
+            
+            _context.UserFeedback.Add(newFeedback);
+            await _context.SaveChangesAsync();
+            // ---------------------------------------------
+            
             return RedirectToAction("ViewComments", new { patientId = patientId });
         }
     }

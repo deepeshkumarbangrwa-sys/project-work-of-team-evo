@@ -1,102 +1,84 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Http;
-using Microsoft.Data.SqlClient;
-using WebApplication1.Models;
+using Microsoft.AspNetCore.Cryptography.KeyDerivation;
+using System.Security.Cryptography;
+using System.Text;
+using WebApplication1.Data; // <-- CORRECTED NAMESPACE
+using System.Linq;
+using Microsoft.AspNetCore.Http; // For Session management
+using Microsoft.EntityFrameworkCore;
 
 namespace WebApplication1.Controllers
 {
     public class AccountController : Controller
     {
-        [HttpGet]
+        private readonly AppDbContext _context;
+
+        public AccountController(AppDbContext context)
+        {
+            _context = context;
+        }
+
+        private string HashPassword(string password)
+        {
+            // Must match the hashing method used in DbInitializer.cs
+            using (var sha256 = SHA256.Create())
+            {
+                var bytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
+                return Convert.ToBase64String(bytes);
+            }
+        }
+
+        // GET: /Account/Login
         public IActionResult Login()
         {
-            if (HttpContext.Session.GetString("UserRole") != null)
-            {
-                return (HttpContext.Session.GetString("UserRole") == "Clinician")
-                    ? RedirectToAction("ClinicianDashboard", "Feedback")
-                    : RedirectToAction("PatientHome", "Feedback");
-            }
             return View();
         }
 
+        // POST: /Account/Login
         [HttpPost]
-        public IActionResult Login(string email, string password)
+        public async Task<IActionResult> Login(string email, string password)
         {
-            using (SqlConnection conn = DbHelper.GetConnection())
+            if (string.IsNullOrEmpty(email) || string.IsNullOrEmpty(password))
             {
-                conn.Open();
-                string query = "SELECT UserID, Role, FullName FROM Users WHERE Email = @e AND Password = @p";
-                using (SqlCommand cmd = new SqlCommand(query, conn))
-                {
-                    cmd.Parameters.AddWithValue("@e", email);
-                    cmd.Parameters.AddWithValue("@p", password);
-
-                    using (SqlDataReader reader = cmd.ExecuteReader())
-                    {
-                        if (reader.Read())
-                        {
-                            HttpContext.Session.SetInt32("UserID", (int)reader["UserID"]);
-                            HttpContext.Session.SetString("UserRole", reader["Role"].ToString());
-                            HttpContext.Session.SetString("UserName", reader["FullName"].ToString());
-
-                            return (reader["Role"].ToString() == "Clinician")
-                                ? RedirectToAction("ClinicianDashboard", "Feedback")
-                                : RedirectToAction("PatientHome", "Feedback");
-                        }
-                    }
-                }
-            }
-            ViewBag.Error = "Invalid Email or Password.";
-            return View();
-        }
-
-        [HttpGet]
-        public IActionResult Register()
-        {
-            return View();
-        }
-
-        [HttpPost]
-        public IActionResult Register(string fullName, string email, string password, string role)
-        {
-            if (string.IsNullOrEmpty(role))
-            {
-                ViewBag.Error = "Please select a registration type.";
+                ViewData["Error"] = "Email and password are required.";
                 return View();
             }
 
-            using (SqlConnection conn = DbHelper.GetConnection())
-            {
-                conn.Open();
-                using (SqlCommand checkCmd = new SqlCommand("SELECT COUNT(*) FROM Users WHERE Email = @e", conn))
-                {
-                    checkCmd.Parameters.AddWithValue("@e", email);
-                    if ((int)checkCmd.ExecuteScalar() > 0)
-                    {
-                        ViewBag.Error = "This email is already registered.";
-                        return View();
-                    }
-                }
+            string hashedPassword = HashPassword(password);
 
-                string insertQuery = "INSERT INTO Users (Email, Password, Role, FullName) VALUES (@e, @p, @r, @f)";
-                using (SqlCommand insertCmd = new SqlCommand(insertQuery, conn))
+            // --- USE EF CORE TO FIND USER (Fix for SqlException) ---
+            var user = await _context.Users
+                .FirstOrDefaultAsync(u => u.Email == email && u.PasswordHash == hashedPassword);
+            // ----------------------------------------------------
+
+            if (user != null)
+            {
+                // Set Session for authentication
+                HttpContext.Session.SetString("UserId", user.UserId.ToString());
+                HttpContext.Session.SetString("UserEmail", user.Email);
+                HttpContext.Session.SetString("UserRole", user.Role);
+
+                if (user.Role == "Patient")
                 {
-                    insertCmd.Parameters.AddWithValue("@e", email);
-                    insertCmd.Parameters.AddWithValue("@p", password);
-                    insertCmd.Parameters.AddWithValue("@r", role);
-                    insertCmd.Parameters.AddWithValue("@f", fullName);
-                    insertCmd.ExecuteNonQuery();
+                    // Redirect to the Dashboard after successful login
+                    return RedirectToAction("Index", "Home");
+                }
+                else
+                {
+                    // Placeholder for future Clinician/Admin view
+                    return RedirectToAction("Index", "Home"); 
                 }
             }
 
-            ViewBag.Success = "Registration successful! Please log in.";
-            return RedirectToAction("Login");
+            ViewData["Error"] = "Invalid login attempt.";
+            return View();
         }
 
+        // GET: /Account/Logout
         public IActionResult Logout()
         {
             HttpContext.Session.Clear();
-            return RedirectToAction("Login");
+            return RedirectToAction("Login", "Account");
         }
     }
 }
