@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Cryptography.KeyDerivation;
 using System.Security.Cryptography;
 using System.Text;
-using WebApplication1.Data; // <-- CORRECTED NAMESPACE
+using WebApplication1.Data; 
 using System.Linq;
-using Microsoft.AspNetCore.Http; // For Session management
+using Microsoft.AspNetCore.Http; 
 using Microsoft.EntityFrameworkCore;
+using System.Threading.Tasks;
 
 namespace WebApplication1.Controllers
 {
@@ -46,27 +46,29 @@ namespace WebApplication1.Controllers
 
             string hashedPassword = HashPassword(password);
 
-            // --- USE EF CORE TO FIND USER (Fix for SqlException) ---
             var user = await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == email && u.PasswordHash == hashedPassword);
-            // ----------------------------------------------------
 
             if (user != null)
             {
-                // Set Session for authentication
-                HttpContext.Session.SetString("UserId", user.UserId.ToString());
+                // *** FIX HERE: Storing UserId as an Integer ***
+                HttpContext.Session.SetInt32("UserId", user.UserId); 
+                
                 HttpContext.Session.SetString("UserEmail", user.Email);
                 HttpContext.Session.SetString("UserRole", user.Role);
+                
+                // Assuming FullName is used elsewhere, setting it too
+                HttpContext.Session.SetString("UserName", user.FullName); 
 
                 if (user.Role == "Patient")
                 {
                     // Redirect to the Dashboard after successful login
-                    return RedirectToAction("Index", "Home");
+                    return RedirectToAction("Index", "Home"); // Assuming PatientController exists
                 }
                 else
                 {
-                    // Placeholder for future Clinician/Admin view
-                    return RedirectToAction("Index", "Home"); 
+                    // Redirect to Clinician dashboard for non-patients
+                    return RedirectToAction("ClinicianDashboard", "Feedback"); 
                 }
             }
 

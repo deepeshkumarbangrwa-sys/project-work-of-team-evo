@@ -3,10 +3,10 @@ using Microsoft.AspNetCore.Http;
 using System;
 using System.Collections.Generic;
 using WebApplication1.Models;
-using WebApplication1.Data; // <-- NEW: Required for AppDbContext
+using WebApplication1.Data; 
 using System.Linq;
-using System.Threading.Tasks; // <-- NEW: For async database operations
-using Microsoft.EntityFrameworkCore; // <-- NEW: For EF Core methods
+using System.Threading.Tasks; 
+using Microsoft.EntityFrameworkCore; 
 
 namespace WebApplication1.Controllers
 {
@@ -29,9 +29,8 @@ namespace WebApplication1.Controllers
 
     public class FeedbackController : Controller
     {
-        private readonly AppDbContext _context; // <-- NEW: Injected DbContext
+        private readonly AppDbContext _context; 
 
-        // Constructor for Dependency Injection
         public FeedbackController(AppDbContext context)
         {
             _context = context;
@@ -41,8 +40,7 @@ namespace WebApplication1.Controllers
         public IActionResult PatientHome()
         {
             if (HttpContext.Session.GetString("UserRole") != "Patient") return RedirectToAction("Login", "Account");
-            // NOTE: Ensure "UserName" is set in AccountController during login.
-            ViewBag.UserName = HttpContext.Session.GetString("UserEmail"); 
+            ViewBag.UserName = HttpContext.Session.GetString("UserName"); 
             return View();
         }
 
@@ -51,7 +49,6 @@ namespace WebApplication1.Controllers
         {
             if (HttpContext.Session.GetString("UserRole") != "Clinician") return RedirectToAction("Login", "Account");
 
-            // --- REPLACED MANUAL SQL WITH EF CORE LINQ ---
             var patients = await _context.Users
                 .Where(u => u.Role == "Patient")
                 .Select(u => new PatientViewModel
@@ -60,10 +57,9 @@ namespace WebApplication1.Controllers
                     Name = u.FullName,
                     // Calculated the unread count via the navigation property
                     NotificationCount = u.FeedbackEntries
-                        .Count(f => f.User.Role == "Patient" && !f.IsReviewed) 
+                        .Count(f => !f.IsReviewed) // Count unreviewed feedback
                 })
                 .ToListAsync();
-            // ---------------------------------------------
             
             return View(patients);
         }
@@ -73,16 +69,16 @@ namespace WebApplication1.Controllers
         {
             if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
 
+            // myId is now correctly retrieved as an integer
             int myId = HttpContext.Session.GetInt32("UserId") ?? 0;
             string role = HttpContext.Session.GetString("UserRole") ?? string.Empty;
 
             int targetId = (role == "Patient") ? myId : patientId ?? 0;
-            if (targetId == 0 && role == "Clinician") return RedirectToAction("ClinicianDashboard");
+            if (targetId == 0) return RedirectToAction("ClinicianDashboard"); // Safety check for missing target
 
             if (role == "Clinician")
             {
-                // --- REPLACED MANUAL SQL UPDATE WITH EF CORE ---
-                // Mark all patient-submitted (unreplied) comments as reviewed
+                // Mark all patient-submitted comments as reviewed (assuming the Clinician is viewing them)
                 var unreviewedComments = await _context.UserFeedback
                     .Where(f => f.UserId == targetId && !f.IsReviewed)
                     .ToListAsync();
@@ -92,14 +88,13 @@ namespace WebApplication1.Controllers
                     comment.IsReviewed = true;
                 }
                 await _context.SaveChangesAsync();
-                // ------------------------------------------------
             }
 
-            // --- REPLACED MANUAL SQL QUERY WITH EF CORE LINQ ---
             // Fetch all feedback related to the target user
             var feedback = await _context.UserFeedback
                 .Where(f => f.UserId == targetId)
-                // Use the User navigation property for the AuthorName
+                // Include the User to get the FullName for the AuthorName property
+                .Include(f => f.User) 
                 .OrderBy(f => f.Timestamp)
                 .Select(f => new CommentModel
                 {
@@ -107,10 +102,9 @@ namespace WebApplication1.Controllers
                     Role = f.User.Role, 
                     Content = f.CommentText,
                     Timestamp = f.Timestamp,
-                    IsRead = f.IsReviewed // Map IsReviewed to IsRead for display logic
+                    IsRead = f.IsReviewed 
                 })
                 .ToListAsync();
-            // ---------------------------------------------------
 
             ViewBag.CurrentRole = role;
             ViewBag.TargetPatientID = targetId;
@@ -126,12 +120,16 @@ namespace WebApplication1.Controllers
             if (HttpContext.Session.GetString("UserRole") == null) return RedirectToAction("Login", "Account");
             if (string.IsNullOrWhiteSpace(content)) return RedirectToAction("ViewComments", new { patientId = patientId });
 
-            int myId = HttpContext.Session.GetInt32("UserId") ?? 0;
+            // This ID is the AUTHOR's ID (the sender) - which is currently not used in the UserFeedback model
+            // int currentUserId = HttpContext.Session.GetInt32("UserId") ?? 0; 
             string role = HttpContext.Session.GetString("UserRole") ?? "Unknown";
 
-            // --- REPLACED MANUAL SQL INSERT WITH EF CORE ---
+            // If patientId is invalid, the foreign key fails. 
+            // We assume patientId is valid since it comes from the URL/form.
+            
             var newFeedback = new UserFeedback
             {
+                // UserId is the Patient/Recipient ID (the entity this feedback belongs to)
                 UserId = patientId, 
                 Timestamp = DateTime.UtcNow,
                 CommentText = content,
@@ -139,8 +137,9 @@ namespace WebApplication1.Controllers
             };
             
             _context.UserFeedback.Add(newFeedback);
-            await _context.SaveChangesAsync();
-            // ---------------------------------------------
+            
+            // This is the line that will now succeed, as long as patientId is a valid User ID.
+            await _context.SaveChangesAsync(); 
             
             return RedirectToAction("ViewComments", new { patientId = patientId });
         }
